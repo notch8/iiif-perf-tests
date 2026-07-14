@@ -1,0 +1,136 @@
+# iiif-perf-tests
+
+A repeatable [Playwright](https://playwright.dev/) test suite that measures IIIF-viewer
+load performance on a Hyku/Hyrax work-show page, for one or more works on a given host.
+
+It doesn't assert against fixed thresholds — run-to-run variance on real infrastructure
+is high — instead it records structured metrics per run so results can be diffed over
+time, across works, or across hosts/deployments (hykuup, ethos, etc).
+
+## What it measures, per work
+
+- Whether the page loaded cleanly or hit a Cloudflare challenge/interstitial
+  (detected via page title, e.g. "Just a moment..." / "Attention Required") — recorded,
+  not treated as a hard failure, and never attempted to be solved.
+- HAR `dns` / `connect` / `ssl` / `wait` / `receive` timing breakdown for the main
+  document request.
+- Time from navigation start to the viewer embed (iframe by default) appearing in the DOM.
+- Time from navigation start to the first IIIF Image API tile request/response.
+- `networkidle` timing, or a timed-out marker if the page never settles.
+- Console errors and uncaught page errors.
+- A screenshot and a HAR file.
+
+## Setup
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+## Usage
+
+```bash
+IIIF_TEST_HOST=demo.hykuup.com \
+IIIF_TEST_WORKS=/concern/images/3812ff57-82e2-4d73-8cd8-9617fdfb3c44,/concern/generic_works/67cef51b-fe3d-4703-9dfd-aa967d231898 \
+npx playwright test
+```
+
+One test runs per entry in `IIIF_TEST_WORKS`, serially (not in parallel — these are
+load-time measurements, so concurrent runs would skew each other's timing).
+
+If you need the internal monitoring `IIIF_TEST_UA` value (see below), copy
+`.env.example` to `.env` and run through [1Password CLI](https://developer.1password.com/docs/cli/)
+instead, which resolves the `op://` reference to the real secret at run time without
+ever writing it to disk or your shell history:
+
+```bash
+cp .env.example .env   # already gitignored
+op run --env-file=.env -- npx playwright test
+```
+
+### Environment variables
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `IIIF_TEST_HOST` | yes | — | Bare host, e.g. `demo.hykuup.com` (scheme/trailing slash stripped if present) |
+| `IIIF_TEST_WORKS` | yes | — | Comma-separated **full paths**, e.g. `/concern/images/<id>,/concern/generic_works/<id>`. Full paths are required (not just IDs) because different Hyku/Hyrax deployments use different controller conventions per work type (`images`, `generic_works`, `thesis_or_dissertations`, ...) |
+| `IIIF_TEST_NAV_TIMEOUT_MS` | no | `60000` | Timeout for the initial navigation |
+| `IIIF_TEST_NETWORKIDLE_TIMEOUT_MS` | no | `45000` | Timeout waiting for `networkidle` after navigation completes |
+| `IIIF_TEST_OUTPUT_DIR` | no | `results` | Where JSON/HAR/screenshot artifacts are written |
+| `IIIF_TEST_UA` | no | plain desktop Chrome UA | Override the User-Agent sent (see below) |
+| `IIIF_TEST_VIEWER_SELECTOR` | no | see `src/config.ts` | CSS selector for the viewer embed. Default matches common Universal Viewer/Mirador iframe `src` conventions. **Tune this per deployment** — see caveat below |
+| `IIIF_TEST_TILE_PATTERN` | no | see `src/config.ts` | Regex (as a string) matching an IIIF Image API tile request URL by its `region/size/rotation/quality.format` shape, without assuming any particular URL prefix |
+| `IIIF_TEST_VIEWPORT_WIDTH` / `IIIF_TEST_VIEWPORT_HEIGHT` | no | `1400` / `1000` | Browser viewport size |
+
+### Why a cache-busting query param
+
+Every request URL gets a `?cache=<timestamp>` suffix, which forces Cloudflare to serve
+`cf-cache-status: MISS` — otherwise you'd be timing a cached edge response, not real
+backend load performance.
+
+### User-Agent
+
+The default `IIIF_TEST_UA` is a plain, unremarkable desktop Chrome string — nothing
+that skips bot/WAF checks. This repo is **public**, so no such value is hardcoded or
+documented here, on purpose.
+
+Some monitored deployments have an existing, legitimate allowance for a specific
+monitoring User-Agent. That value lives in 1Password (`DevOps` vault, item
+`iiif-perf-tests monitoring UA`, `credential` field) — never in this repo, in
+committed `.env` files, in shell history, or in CI logs. Reference it via `op://`
+(see `.env.example`) and run through `op run --env-file=.env -- ...` as shown above;
+`op run` also redacts the resolved value from anything the command prints to stdout.
+Without it, expect the suite to hit Cloudflare challenges on some deployments, which
+it will detect and record rather than try to solve.
+
+## Known caveat: viewer selector false positives
+
+A bare `iframe` selector is too broad in practice — Cloudflare's own bot/JS-challenge
+machinery can inject a transient hidden iframe on ordinary (non-challenge) page loads,
+which gets mistaken for the viewer appearing. The default selector
+(`src/config.ts` → `DEFAULT_VIEWER_SELECTOR`) constrains to known viewer `src`
+conventions (Universal Viewer, Mirador) to avoid this. If a deployment uses a
+different viewer (e.g. a `<div>`-based OpenSeadragon embed with no iframe at all),
+set `IIIF_TEST_VIEWER_SELECTOR` to something that actually matches it, and verify with
+a real run — a mismatched selector silently reports `viewerFoundMs: null` rather than
+erroring.
+
+## Output layout
+
+```
+results/<host>/<work-slug>/<run-timestamp>.json      # structured metrics for that run
+results/<host>/<work-slug>/<run-timestamp>/trace.har
+results/<host>/<work-slug>/<run-timestamp>/screenshot.png
+```
+
+Grouping by work keeps a history of runs for that work together (sorted by timestamp)
+for easy diffing over time, while staying disjoint across hosts and works.
+
+`results/` is gitignored by default — treat it as run output, not something to commit.
+Archive it elsewhere if you want to keep a long-running history.
+
+Playwright's own HTML report (`npx playwright show-report`) also gets the JSON/HAR/
+screenshot attached per test, plus a `cloudflare-challenge` annotation on any run where
+one was detected.
+
+## Metrics JSON shape
+
+See `src/types.ts` (`RunMetrics`) for the exact shape. Timing fields are milliseconds
+relative to navigation start; `null` means "not observed" (timed out, selector never
+matched, or the run aborted before that point — e.g. a Cloudflare challenge skips
+`networkidle`/tile/viewer timing entirely since there's nothing real left to measure).
+
+## Extending to a new host or viewer
+
+1. Confirm the actual work-show URL path convention for that deployment (controller
+   name varies by work type — check in a browser, don't assume).
+2. Run once with defaults and inspect the resulting HAR/screenshot to see whether the
+   default viewer selector and tile pattern actually matched anything for that
+   deployment's markup — adjust `IIIF_TEST_VIEWER_SELECTOR` / `IIIF_TEST_TILE_PATTERN`
+   if not.
+
+## Prior art
+
+This suite formalizes ad-hoc investigation scripts from a manual debugging session
+(Python + Playwright, see `iiif_viewer_investigation/bin/` for `capture_hykuup.py`,
+`capture_ethos.py`, `trace_combined.py`) into a reusable, parameterized suite.

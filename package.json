@@ -1,0 +1,19 @@
+{
+  "name": "iiif-perf-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Repeatable Playwright test suite measuring IIIF viewer load performance on Hyku/Hyrax work-show pages, across hosts and works",
+  "type": "commonjs",
+  "scripts": {
+    "test": "playwright test",
+    "test:op": "op run --env-file=.env -- playwright test",
+    "report": "playwright show-report",
+    "install-browsers": "playwright install chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}

@@ -49,16 +49,24 @@ function stepAtMs(milestones, name) {
 }
 
 // Metrics columns pulled out of the steps array for both the per-run and
-// aggregate tables — kept in one place so the two stay in sync.
+// aggregate tables — kept in one place so the two stay in sync. Most are
+// millisecond timings (fmtMs); jsChunksBetweenManifestAndInfo is a plain
+// count (fmtCount), not a duration.
 const METRIC_COLUMNS = [
-  { key: 'wait', label: 'Wait', get: (m) => m.mainDocument?.timing?.wait ?? null },
-  { key: 'viewerFoundMs', label: 'Viewer found', get: (m) => stepAtMs(m.milestones, 'viewerFound') },
-  { key: 'manifestRequestMs', label: 'Manifest req', get: (m) => stepAtMs(m.milestones, 'manifestRequest') },
-  { key: 'manifestResponseMs', label: 'Manifest resp', get: (m) => stepAtMs(m.milestones, 'manifestResponse') },
-  { key: 'infoRequestMs', label: 'Info req', get: (m) => stepAtMs(m.milestones, 'infoRequest') },
-  { key: 'infoResponseMs', label: 'Info resp', get: (m) => stepAtMs(m.milestones, 'infoResponse') },
-  { key: 'firstTileRequestMs', label: 'First tile req', get: (m) => stepAtMs(m.milestones, 'firstTileRequest') },
-  { key: 'firstTileResponseMs', label: 'First tile resp', get: (m) => stepAtMs(m.milestones, 'firstTileResponse') },
+  { key: 'wait', label: 'Wait', get: (m) => m.mainDocument?.timing?.wait ?? null, fmt: fmtMs },
+  { key: 'viewerFoundMs', label: 'Viewer found', get: (m) => stepAtMs(m.milestones, 'viewerFound'), fmt: fmtMs },
+  { key: 'manifestRequestMs', label: 'Manifest req', get: (m) => stepAtMs(m.milestones, 'manifestRequest'), fmt: fmtMs },
+  { key: 'manifestResponseMs', label: 'Manifest resp', get: (m) => stepAtMs(m.milestones, 'manifestResponse'), fmt: fmtMs },
+  {
+    key: 'jsChunksBetweenManifestAndInfo',
+    label: 'JS chunks (manifest→info)',
+    get: (m) => m.milestones?.jsChunksBetweenManifestAndInfo ?? null,
+    fmt: fmtCount,
+  },
+  { key: 'infoRequestMs', label: 'Info req', get: (m) => stepAtMs(m.milestones, 'infoRequest'), fmt: fmtMs },
+  { key: 'infoResponseMs', label: 'Info resp', get: (m) => stepAtMs(m.milestones, 'infoResponse'), fmt: fmtMs },
+  { key: 'firstTileRequestMs', label: 'First tile req', get: (m) => stepAtMs(m.milestones, 'firstTileRequest'), fmt: fmtMs },
+  { key: 'firstTileResponseMs', label: 'First tile resp', get: (m) => stepAtMs(m.milestones, 'firstTileResponse'), fmt: fmtMs },
 ];
 
 function toRow(run) {
@@ -86,6 +94,10 @@ function fmtMs(value) {
   return value === null || value === undefined ? 'N/A' : `${Math.round(value)}ms`;
 }
 
+function fmtCount(value) {
+  return value === null || value === undefined ? 'N/A' : `${value}`;
+}
+
 function fmtNetworkIdle(row) {
   if (row.networkIdleTimedOut) return 'timed out';
   return fmtMs(row.networkIdleMs);
@@ -104,9 +116,9 @@ function stats(values) {
   return { min: nums[0], median, max: nums[n - 1], n, total };
 }
 
-function fmtStat(s) {
+function fmtStat(s, fmt = fmtMs) {
   if (s.n === 0) return `N/A (n=0/${s.total})`;
-  return `${fmtMs(s.median)} (${fmtMs(s.min)}–${fmtMs(s.max)}, n=${s.n}/${s.total})`;
+  return `${fmt(s.median)} (${fmt(s.min)}–${fmt(s.max)}, n=${s.n}/${s.total})`;
 }
 
 function groupKey(row) {
@@ -122,7 +134,7 @@ function printPerRunTable(rows) {
   );
   console.log(`|${'---|'.repeat(6 + METRIC_COLUMNS.length + 4)}`);
   for (const r of sorted) {
-    const metricCells = METRIC_COLUMNS.map((c) => fmtMs(r[c.key])).join(' | ');
+    const metricCells = METRIC_COLUMNS.map((c) => c.fmt(r[c.key])).join(' | ');
     console.log(
       `| ${r.timestamp} | ${r.host} | ${r.workPath} | ${r.runLabel ?? '—'} | ${r.challenge ? '⚠️ yes' : 'no'} | ${
         r.navError ? '⚠️ yes' : 'no'
@@ -153,7 +165,7 @@ function printAggregateTable(rows) {
     const idleTimeouts = groupRows.filter((r) => r.networkIdleTimedOut).length;
     const idleStat = stats(groupRows.map((r) => r.networkIdleMs));
     const idleSuffix = idleTimeouts > 0 ? ` (+${idleTimeouts} timed out)` : '';
-    const metricCells = METRIC_COLUMNS.map((c) => fmtStat(stats(groupRows.map((r) => r[c.key])))).join(' | ');
+    const metricCells = METRIC_COLUMNS.map((c) => fmtStat(stats(groupRows.map((r) => r[c.key])), c.fmt)).join(' | ');
 
     console.log(
       `| ${key} | ${groupRows.length} | ${challengeCount > 0 ? `⚠️ ${challengeCount}` : '0'} | ${

@@ -28,6 +28,11 @@ export interface RunMilestones {
   networkIdleTimedOut: boolean;
   steps: MilestoneStep[];
   totalMs: number | null; // atMs of the last observed step
+  // Count of script-type requests fired strictly after the manifest response
+  // and up to (inclusive) the info.json request — the viewer parsing the
+  // manifest and fetching more of its own JS chunks before it can act on it.
+  // null if either boundary (manifestResponse, infoRequest) wasn't observed.
+  jsChunksBetweenManifestAndInfo: number | null;
 }
 
 export interface RunMetrics {

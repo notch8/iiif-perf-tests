@@ -253,6 +253,14 @@ sum of every `stepMs`) — a single top-line number for "how long did this run
 take, start to finish." A Cloudflare challenge sets `milestones` to `null`
 entirely, since nothing past that point is real page-load behavior.
 
+`milestones.jsChunksBetweenManifestAndInfo` counts script-type requests fired
+strictly after the manifest response and up to the `info.json` request. In
+practice this is largely the viewer parsing the manifest and fetching more of
+its own (unbundled) JS chunks before it can act on it — see
+`iiif_viewer_investigation/request_flow.md` §3–4 — so a regression here often
+means "the viewer got heavier," not "the backend got slower." `null` if either
+boundary (`manifestResponse`, `infoRequest`) wasn't observed for that run.
+
 ## Extending to a new host or viewer
 
 1. Confirm the actual work-show URL path convention for that deployment (controller

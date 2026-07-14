@@ -68,11 +68,19 @@ for (const workPath of config.works) {
         { pattern: config.tilePattern, requestStep: 'firstTileRequest', responseStep: 'firstTileResponse' },
       ];
       const firstMatch: Partial<Record<StepName, RawStep>> = {};
+      // Every script-type request, timestamped — used below to count how many
+      // JS chunks the viewer fetches between getting the manifest and being
+      // able to request info.json (its own bootstrapping cost, not backend
+      // latency — see README "Metrics JSON shape").
+      const scriptRequests: Array<{ atMs: number }> = [];
       page.on('request', (req) => {
         for (const s of requestResponseSteps) {
           if (!firstMatch[s.requestStep] && s.pattern.test(req.url())) {
             firstMatch[s.requestStep] = { atMs: Date.now() - navStartMs, url: req.url() };
           }
+        }
+        if (req.resourceType() === 'script') {
+          scriptRequests.push({ atMs: Date.now() - navStartMs });
         }
       });
       page.on('response', (res) => {
@@ -146,7 +154,21 @@ for (const workPath of config.works) {
                 ...firstMatch,
                 networkIdle: { atMs: networkIdleMs },
               });
-              return { viewerSelector: config.viewerSelector, networkIdleTimedOut, steps, totalMs };
+
+              const manifestResponseAt = firstMatch.manifestResponse?.atMs;
+              const infoRequestAt = firstMatch.infoRequest?.atMs;
+              const jsChunksBetweenManifestAndInfo =
+                manifestResponseAt != null && infoRequestAt != null
+                  ? scriptRequests.filter((r) => r.atMs > manifestResponseAt && r.atMs <= infoRequestAt).length
+                  : null;
+
+              return {
+                viewerSelector: config.viewerSelector,
+                networkIdleTimedOut,
+                steps,
+                totalMs,
+                jsChunksBetweenManifestAndInfo,
+              };
             })(),
         consoleErrors,
         pageErrors,

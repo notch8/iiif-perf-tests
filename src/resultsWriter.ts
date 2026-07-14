@@ -11,12 +11,20 @@ export interface RunPaths {
 }
 
 /**
- * Lays out results as results/<host>/<work-slug>/<run-timestamp>/ so runs for
- * the same work over time sit together and are easy to diff/compare, while
- * different hosts and works never collide.
+ * Lays out results as results/<host>/<work-slug>/[label/]<run-timestamp>/ so
+ * runs for the same work (and, when labeled, the same named scenario) sit
+ * together and are easy to diff/compare, while different hosts and works
+ * never collide. The label segment is omitted entirely when not set, keeping
+ * unlabeled runs on the original flat layout.
  */
-export function buildRunPaths(outputDir: string, host: string, workPath: string, runTimestamp: string): RunPaths {
-  const workDir = path.join(outputDir, host, slugifyWorkPath(workPath));
+export function buildRunPaths(
+  outputDir: string,
+  host: string,
+  workPath: string,
+  runTimestamp: string,
+  runLabel?: string | null
+): RunPaths {
+  const workDir = path.join(outputDir, host, slugifyWorkPath(workPath), ...(runLabel ? [runLabel] : []));
   const runDir = path.join(workDir, runTimestamp);
   return {
     runDir,

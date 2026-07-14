@@ -61,6 +61,8 @@ op run --env-file=.env -- npx playwright test
 | `IIIF_TEST_VIEWER_SELECTOR` | no | see `src/config.ts` | CSS selector for the viewer embed. Default matches common Universal Viewer/Mirador iframe `src` conventions. **Tune this per deployment** — see caveat below |
 | `IIIF_TEST_TILE_PATTERN` | no | see `src/config.ts` | Regex (as a string) matching an IIIF Image API tile request URL by its `region/size/rotation/quality.format` shape, without assuming any particular URL prefix |
 | `IIIF_TEST_VIEWPORT_WIDTH` / `IIIF_TEST_VIEWPORT_HEIGHT` | no | `1400` / `1000` | Browser viewport size |
+| `IIIF_TEST_RUN_LABEL` | no | none | Tags this batch of runs (e.g. `baseline`, `after-cdn-change`) — stamped into each run's JSON and used as an extra results path segment, so runs for the same scenario group together. See "Comparing runs over time" below |
+| `IIIF_TEST_REPEAT` | no | `1` | Run each work this many times in one invocation. Single-run timings are noisy (see `iiif_viewer_investigation/request_flow.md` §5) — a real before/after comparison needs several samples per side, not one |
 
 ### Why a cache-busting query param
 
@@ -98,20 +100,126 @@ erroring.
 ## Output layout
 
 ```
-results/<host>/<work-slug>/<run-timestamp>.json      # structured metrics for that run
-results/<host>/<work-slug>/<run-timestamp>/trace.har
-results/<host>/<work-slug>/<run-timestamp>/screenshot.png
+results/<host>/<work-slug>/[label/]<run-timestamp>.json      # structured metrics for that run
+results/<host>/<work-slug>/[label/]<run-timestamp>/trace.har
+results/<host>/<work-slug>/[label/]<run-timestamp>/screenshot.png
 ```
 
-Grouping by work keeps a history of runs for that work together (sorted by timestamp)
-for easy diffing over time, while staying disjoint across hosts and works.
+Grouping by work (and, when set, by `IIIF_TEST_RUN_LABEL`) keeps a history of runs
+together (sorted by timestamp) for easy diffing over time, while staying disjoint
+across hosts, works, and labeled scenarios. The label segment is omitted entirely
+when `IIIF_TEST_RUN_LABEL` isn't set.
 
 `results/` is gitignored by default — treat it as run output, not something to commit.
-Archive it elsewhere if you want to keep a long-running history.
+See "Comparing runs over time" below for what *does* get committed.
 
 Playwright's own HTML report (`npx playwright show-report`) also gets the JSON/HAR/
 screenshot attached per test, plus a `cloudflare-challenge` annotation on any run where
 one was detected.
+
+## Comparing runs over time
+
+Single-run timings are noisy — `iiif_viewer_investigation/request_flow.md` §5 shows
+`dns`/`connect`/`ssl` swinging by 20x between captures on the same target, almost
+certainly from local network/resolver conditions rather than the deployment itself.
+Answering "did this infrastructure change actually help?" needs several samples on
+each side of the change, aggregated, not two single runs eyeballed side by side.
+
+1. Run a batch of samples under a label, e.g.:
+   ```bash
+   IIIF_TEST_HOST=demo.hykuup.com \
+   IIIF_TEST_WORKS=/concern/images/3812ff57-82e2-4d73-8cd8-9617fdfb3c44 \
+   IIIF_TEST_RUN_LABEL=baseline \
+   IIIF_TEST_REPEAT=5 \
+   npx playwright test
+   ```
+2. Summarize that batch into a Markdown timing table:
+   ```bash
+   node scripts/summarize.mjs results --label baseline
+   ```
+   This prints a per-run table plus an aggregate table (min/median/max per
+   milestone, with sample size — a column computed from 2 of 5 runs is called
+   out, not silently blended with the rest). Cloudflare-challenge and
+   navigation-error runs are flagged rather than folded in as ordinary missing
+   data.
+3. Repeat for the "after" scenario with a different label (e.g. `after-cdn-change`),
+   then compare the two aggregate tables.
+4. To keep a comparison as durable history (mirroring
+   [`solr_load_testing`](https://github.com/notch8/solr_load_testing)'s
+   `prod_results/` convention), commit a snapshot:
+   ```bash
+   mkdir -p prod_results/baseline
+   node scripts/summarize.mjs results --label baseline > prod_results/baseline/summary.md
+   cp results/<host>/<work-slug>/baseline/<a-representative-timestamp>/screenshot.png \
+      prod_results/baseline/
+   ```
+   Then hand-write a short `prod_results/baseline/README.md` noting what was
+   tested and any key takeaways (see `solr_load_testing`'s `prod_results/*/README.md`
+   for the style). **Never commit a `.har` file to `prod_results/`** — HARs
+   capture every response header on the page, including cookies/auth headers,
+   and this is a public repo. The per-run JSON metrics files are safe to commit
+   (no headers, just timings/URLs) and are the more useful artifact for
+   re-analysis anyway.
+
+## Running via Kubernetes
+
+Running from a laptop means the reported `dns`/`connect`/`ssl` numbers are partly
+measuring your own network, not the deployment (see above). Running from inside a
+cluster — or at least from a fixed, stable location — removes that variable. This
+mirrors [`solr_load_testing`](https://github.com/notch8/solr_load_testing)'s
+approach for the same reason.
+
+### Prerequisites
+
+- `kubectl` configured with access to the target cluster
+- Docker, to build/push the image (or use the one built by CI — see
+  `.github/workflows/build-image.yml`)
+
+### Configuration
+
+Edit `IIIF_TEST_HOST`, `IIIF_TEST_WORKS`, and `IIIF_TEST_RUN_LABEL` directly in
+`k8s/job.yaml` before each run — these are the values likely to change between
+runs, same idea as `solr_load_testing`'s `solr_core` callout. `IIIF_TEST_REPEAT`
+(default `5`) controls how many samples get collected per work in that run.
+
+The `ExternalSecret` (`k8s/external-secret.yaml`) requires the target cluster to
+already have the `onepassword` `ClusterSecretStore` installed (shared ops infra,
+not something this repo provisions) — it fails loudly, not silently, if that's
+missing.
+
+### Running a test
+
+```bash
+kubectl apply -k . --context <your-cluster>
+```
+
+### Retrieving results
+
+Once the Job completes (it sleeps for an hour afterward to leave time for this):
+
+```bash
+RESULTS_POD=$(kubectl get pods -n iiif-perf-testing --context <your-cluster> -l job-name=iiif-perf-test -o jsonpath='{.items[0].metadata.name}')
+kubectl cp --context <your-cluster> -n iiif-perf-testing ${RESULTS_POD}:/results ./results
+```
+
+Then run `node scripts/summarize.mjs results --label <label>` locally as usual.
+
+### Re-running a test
+
+Kubernetes Jobs are immutable once created. If you want to re-run without
+changing anything:
+
+```bash
+kubectl get job iiif-perf-test -n iiif-perf-testing --context <your-cluster> -o yaml \
+  | kubectl replace --force -f -
+```
+
+If you changed `job.yaml`, delete first:
+
+```bash
+kubectl delete job iiif-perf-test -n iiif-perf-testing --context <your-cluster>
+kubectl apply -k . --context <your-cluster>
+```
 
 ## Metrics JSON shape
 

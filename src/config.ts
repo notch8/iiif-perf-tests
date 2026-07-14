@@ -53,11 +53,14 @@ export interface SuiteConfig {
   tilePattern: RegExp;
   viewportWidth: number;
   viewportHeight: number;
+  runLabel: string | null;
+  repeat: number;
 }
 
 export function loadConfig(): SuiteConfig {
   const host = requireEnv('IIIF_TEST_HOST').replace(/^https?:\/\//, '').replace(/\/$/, '');
   const works = parseWorks(requireEnv('IIIF_TEST_WORKS'));
+  const runLabel = process.env.IIIF_TEST_RUN_LABEL?.trim() || null;
 
   return {
     host,
@@ -70,6 +73,8 @@ export function loadConfig(): SuiteConfig {
     tilePattern: new RegExp(process.env.IIIF_TEST_TILE_PATTERN || DEFAULT_TILE_PATTERN, 'i'),
     viewportWidth: Number(process.env.IIIF_TEST_VIEWPORT_WIDTH) || 1400,
     viewportHeight: Number(process.env.IIIF_TEST_VIEWPORT_HEIGHT) || 1000,
+    runLabel,
+    repeat: Number(process.env.IIIF_TEST_REPEAT) || 1,
   };
 }
 

@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: iiif-perf-test
+  namespace: iiif-perf-testing
+spec:
+  ttlSecondsAfterFinished: 604800  # clean up after 7 days
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: iiif-perf-test
+          # :latest tracks main. Pin to a specific :<short-sha> tag instead
+          # when a before/after comparison needs the test tool itself held
+          # constant across both runs (see .github/workflows/build-image.yml
+          # for what tags get pushed).
+          image: ghcr.io/notch8/iiif-perf-tests:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              npx playwright test || true
+              sleep 3600
+          env:
+            # The three values to edit before each run, same idea as
+            # solr_load_testing's solr_core callout in its README.
+            - name: IIIF_TEST_HOST
+              value: "demo.hykuup.com"
+            - name: IIIF_TEST_WORKS
+              value: "/concern/images/3812ff57-82e2-4d73-8cd8-9617fdfb3c44"
+            - name: IIIF_TEST_RUN_LABEL
+              value: "baseline"
+            - name: IIIF_TEST_REPEAT
+              value: "5"
+            - name: IIIF_TEST_OUTPUT_DIR
+              value: "/results"
+            - name: IIIF_TEST_UA
+              valueFrom:
+                secretKeyRef:
+                  name: iiif-perf-monitoring-ua
+                  key: ua
+          volumeMounts:
+            - name: results
+              mountPath: /results
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: iiif-perf-results

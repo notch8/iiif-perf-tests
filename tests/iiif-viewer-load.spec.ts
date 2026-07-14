@@ -9,148 +9,159 @@ const config = loadConfig();
 
 test.describe.configure({ mode: 'serial' });
 
+// IIIF_TEST_REPEAT lets one invocation gather several samples of the same
+// work — single-run timings are noisy (see request_flow.md §5), so comparing
+// an infrastructure change before/after needs more than one data point per side.
 for (const workPath of config.works) {
-  test(`IIIF viewer load: ${config.host}${workPath}`, async ({ browser }, testInfo) => {
-    test.setTimeout(config.navTimeoutMs + config.networkIdleTimeoutMs + 30000);
+  for (let attempt = 1; attempt <= config.repeat; attempt++) {
+    const title =
+      config.repeat > 1
+        ? `IIIF viewer load: ${config.host}${workPath} (${attempt}/${config.repeat})`
+        : `IIIF viewer load: ${config.host}${workPath}`;
 
-    const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const paths = buildRunPaths(config.outputDir, config.host, workPath, runTimestamp);
-    await ensureRunDirs(paths);
+    test(title, async ({ browser }, testInfo) => {
+      test.setTimeout(config.navTimeoutMs + config.networkIdleTimeoutMs + 30000);
 
-    // Cache-bust so Cloudflare serves a real backend response (cf-cache-status:
-    // MISS) instead of an edge cache hit — we're measuring backend load time.
-    const cachebust = Date.now();
-    const url = `https://${config.host}${workPath}?cache=${cachebust}`;
+      const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const paths = buildRunPaths(config.outputDir, config.host, workPath, runTimestamp, config.runLabel);
+      await ensureRunDirs(paths);
 
-    const context = await browser.newContext({
-      userAgent: config.userAgent,
-      viewport: { width: config.viewportWidth, height: config.viewportHeight },
-      recordHar: { path: paths.harPath, mode: 'full' },
-    });
-    await context.addInitScript(buildInitScript(config.viewerSelector));
-    const page = await context.newPage();
+      // Cache-bust so Cloudflare serves a real backend response (cf-cache-status:
+      // MISS) instead of an edge cache hit — we're measuring backend load time.
+      const cachebust = Date.now();
+      const url = `https://${config.host}${workPath}?cache=${cachebust}`;
 
-    const consoleErrors: ConsoleErrorEntry[] = [];
-    page.on('console', (msg) => {
-      if (msg.type() === 'error') {
-        const loc = msg.location();
-        consoleErrors.push({
-          text: msg.text(),
-          location: loc?.url ? `${loc.url}:${loc.lineNumber}` : null,
+      const context = await browser.newContext({
+        userAgent: config.userAgent,
+        viewport: { width: config.viewportWidth, height: config.viewportHeight },
+        recordHar: { path: paths.harPath, mode: 'full' },
+      });
+      await context.addInitScript(buildInitScript(config.viewerSelector));
+      const page = await context.newPage();
+
+      const consoleErrors: ConsoleErrorEntry[] = [];
+      page.on('console', (msg) => {
+        if (msg.type() === 'error') {
+          const loc = msg.location();
+          consoleErrors.push({
+            text: msg.text(),
+            location: loc?.url ? `${loc.url}:${loc.lineNumber}` : null,
+          });
+        }
+      });
+
+      const pageErrors: PageErrorEntry[] = [];
+      page.on('pageerror', (err) => {
+        pageErrors.push({ message: err.message, stack: err.stack ?? null });
+      });
+
+      // Network listener timestamps use the Node-side clock; DOM milestones below
+      // use the page's performance.now(). Both are anchored to the same goto()
+      // call a few lines down, so cross-process clock skew (sub-millisecond in
+      // practice, local process) is negligible next to the multi-second timings
+      // this suite measures.
+      let navStartMs = 0;
+      const tiles: {
+        firstRequest: { ms: number; url: string } | null;
+        firstResponse: { ms: number; url: string } | null;
+      } = { firstRequest: null, firstResponse: null };
+      page.on('request', (req) => {
+        if (!tiles.firstRequest && config.tilePattern.test(req.url())) {
+          tiles.firstRequest = { ms: Date.now() - navStartMs, url: req.url() };
+        }
+      });
+      page.on('response', (res) => {
+        if (!tiles.firstResponse && config.tilePattern.test(res.url())) {
+          tiles.firstResponse = { ms: Date.now() - navStartMs, url: res.url() };
+        }
+      });
+
+      let navError: string | null = null;
+      navStartMs = Date.now();
+      try {
+        await page.goto(url, { waitUntil: 'load', timeout: config.navTimeoutMs });
+      } catch (err) {
+        navError = (err as Error).message;
+      }
+
+      const pageTitle = await page.title().catch(() => '');
+      const cloudflareDetected = /just a moment|attention required/i.test(pageTitle);
+      if (cloudflareDetected) {
+        // Recorded as an annotation, not a failure: a challenge is a real,
+        // measurable outcome we want to track over time, not a broken run.
+        testInfo.annotations.push({
+          type: 'cloudflare-challenge',
+          description: `Detected on ${url} (title: "${pageTitle}")`,
         });
       }
-    });
 
-    const pageErrors: PageErrorEntry[] = [];
-    page.on('pageerror', (err) => {
-      pageErrors.push({ message: err.message, stack: err.stack ?? null });
-    });
+      let networkIdleMs: number | null = null;
+      let networkIdleTimedOut = false;
+      if (!navError && !cloudflareDetected) {
+        try {
+          await page.waitForLoadState('networkidle', { timeout: config.networkIdleTimeoutMs });
+          networkIdleMs = Date.now() - navStartMs;
+        } catch {
+          networkIdleTimedOut = true;
+        }
+      }
 
-    // Network listener timestamps use the Node-side clock; DOM milestones below
-    // use the page's performance.now(). Both are anchored to the same goto()
-    // call a few lines down, so cross-process clock skew (sub-millisecond in
-    // practice, local process) is negligible next to the multi-second timings
-    // this suite measures.
-    let navStartMs = 0;
-    const tiles: {
-      firstRequest: { ms: number; url: string } | null;
-      firstResponse: { ms: number; url: string } | null;
-    } = { firstRequest: null, firstResponse: null };
-    page.on('request', (req) => {
-      if (!tiles.firstRequest && config.tilePattern.test(req.url())) {
-        tiles.firstRequest = { ms: Date.now() - navStartMs, url: req.url() };
+      await page.screenshot({ path: paths.screenshotPath, fullPage: true }).catch(() => {});
+
+      const rawEvents = await page
+        .evaluate<RawPerfEvent[]>(() => (window as unknown as { __iiifPerfEvents: RawPerfEvent[] }).__iiifPerfEvents || [])
+        .catch(() => [] as RawPerfEvent[]);
+      const milestoneTimes = extractMilestoneTimes(rawEvents);
+
+      await context.close();
+
+      const mainDocument = await extractMainDocumentTiming(paths.harPath, url);
+      if (navError && !mainDocument.error) {
+        mainDocument.error = navError;
+      }
+
+      const metrics: RunMetrics = {
+        host: config.host,
+        workPath,
+        url,
+        runLabel: config.runLabel,
+        runStartedAtUtc: new Date(navStartMs).toISOString(),
+        runFinishedAtUtc: new Date().toISOString(),
+        cloudflareChallenge: { detected: cloudflareDetected, pageTitle: pageTitle || null },
+        mainDocument,
+        milestones: navError
+          ? null
+          : {
+              domContentLoadedMs: milestoneTimes.domContentLoadedMs,
+              loadEventMs: milestoneTimes.loadEventMs,
+              viewerFoundMs: milestoneTimes.viewerFoundMs,
+              viewerSelector: config.viewerSelector,
+              viewerSrc: milestoneTimes.viewerSrc,
+              firstTileRequestMs: tiles.firstRequest?.ms ?? null,
+              firstTileResponseMs: tiles.firstResponse?.ms ?? null,
+              firstTileUrl: (tiles.firstResponse ?? tiles.firstRequest)?.url ?? null,
+              networkIdleMs,
+              networkIdleTimedOut,
+            },
+        consoleErrors,
+        pageErrors,
+        artifacts: {
+          harPath: paths.harPath,
+          screenshotPath: paths.screenshotPath,
+        },
+      };
+
+      await writeMetrics(paths, metrics);
+
+      await testInfo.attach('metrics.json', { path: paths.jsonPath, contentType: 'application/json' });
+      await testInfo.attach('screenshot.png', { path: paths.screenshotPath, contentType: 'image/png' }).catch(() => {});
+      await testInfo.attach('trace.har', { path: paths.harPath, contentType: 'application/json' }).catch(() => {});
+
+      // A genuine navigation failure (DNS, timeout, connection refused) is a real
+      // infrastructure problem, unlike timing variance — surface it as a failure.
+      if (navError) {
+        throw new Error(`Navigation failed for ${url}: ${navError}`);
       }
     });
-    page.on('response', (res) => {
-      if (!tiles.firstResponse && config.tilePattern.test(res.url())) {
-        tiles.firstResponse = { ms: Date.now() - navStartMs, url: res.url() };
-      }
-    });
-
-    let navError: string | null = null;
-    navStartMs = Date.now();
-    try {
-      await page.goto(url, { waitUntil: 'load', timeout: config.navTimeoutMs });
-    } catch (err) {
-      navError = (err as Error).message;
-    }
-
-    const title = await page.title().catch(() => '');
-    const cloudflareDetected = /just a moment|attention required/i.test(title);
-    if (cloudflareDetected) {
-      // Recorded as an annotation, not a failure: a challenge is a real,
-      // measurable outcome we want to track over time, not a broken run.
-      testInfo.annotations.push({
-        type: 'cloudflare-challenge',
-        description: `Detected on ${url} (title: "${title}")`,
-      });
-    }
-
-    let networkIdleMs: number | null = null;
-    let networkIdleTimedOut = false;
-    if (!navError && !cloudflareDetected) {
-      try {
-        await page.waitForLoadState('networkidle', { timeout: config.networkIdleTimeoutMs });
-        networkIdleMs = Date.now() - navStartMs;
-      } catch {
-        networkIdleTimedOut = true;
-      }
-    }
-
-    await page.screenshot({ path: paths.screenshotPath, fullPage: true }).catch(() => {});
-
-    const rawEvents = await page
-      .evaluate<RawPerfEvent[]>(() => (window as unknown as { __iiifPerfEvents: RawPerfEvent[] }).__iiifPerfEvents || [])
-      .catch(() => [] as RawPerfEvent[]);
-    const milestoneTimes = extractMilestoneTimes(rawEvents);
-
-    await context.close();
-
-    const mainDocument = await extractMainDocumentTiming(paths.harPath, url);
-    if (navError && !mainDocument.error) {
-      mainDocument.error = navError;
-    }
-
-    const metrics: RunMetrics = {
-      host: config.host,
-      workPath,
-      url,
-      runStartedAtUtc: new Date(navStartMs).toISOString(),
-      runFinishedAtUtc: new Date().toISOString(),
-      cloudflareChallenge: { detected: cloudflareDetected, pageTitle: title || null },
-      mainDocument,
-      milestones: navError
-        ? null
-        : {
-            domContentLoadedMs: milestoneTimes.domContentLoadedMs,
-            loadEventMs: milestoneTimes.loadEventMs,
-            viewerFoundMs: milestoneTimes.viewerFoundMs,
-            viewerSelector: config.viewerSelector,
-            viewerSrc: milestoneTimes.viewerSrc,
-            firstTileRequestMs: tiles.firstRequest?.ms ?? null,
-            firstTileResponseMs: tiles.firstResponse?.ms ?? null,
-            firstTileUrl: (tiles.firstResponse ?? tiles.firstRequest)?.url ?? null,
-            networkIdleMs,
-            networkIdleTimedOut,
-          },
-      consoleErrors,
-      pageErrors,
-      artifacts: {
-        harPath: paths.harPath,
-        screenshotPath: paths.screenshotPath,
-      },
-    };
-
-    await writeMetrics(paths, metrics);
-
-    await testInfo.attach('metrics.json', { path: paths.jsonPath, contentType: 'application/json' });
-    await testInfo.attach('screenshot.png', { path: paths.screenshotPath, contentType: 'image/png' }).catch(() => {});
-    await testInfo.attach('trace.har', { path: paths.harPath, contentType: 'application/json' }).catch(() => {});
-
-    // A genuine navigation failure (DNS, timeout, connection refused) is a real
-    // infrastructure problem, unlike timing variance — surface it as a failure.
-    if (navError) {
-      throw new Error(`Navigation failed for ${url}: ${navError}`);
-    }
-  });
+  }
 }

@@ -33,6 +33,7 @@ export interface RunMetrics {
   host: string;
   workPath: string;
   url: string;
+  runLabel: string | null;
   runStartedAtUtc: string;
   runFinishedAtUtc: string;
   cloudflareChallenge: {

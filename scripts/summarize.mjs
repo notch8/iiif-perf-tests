@@ -41,23 +41,45 @@ function loadRuns(files) {
   return runs;
 }
 
+// Milestones are stored as an ordered "steps" array (see src/milestoneSteps.ts)
+// rather than flat named fields, so every named milestone is looked up the
+// same way regardless of whether it's a DOM event or a request/response pair.
+function stepAtMs(milestones, name) {
+  return milestones?.steps?.find((s) => s.name === name)?.atMs ?? null;
+}
+
+// Metrics columns pulled out of the steps array for both the per-run and
+// aggregate tables — kept in one place so the two stay in sync.
+const METRIC_COLUMNS = [
+  { key: 'wait', label: 'Wait', get: (m) => m.mainDocument?.timing?.wait ?? null },
+  { key: 'viewerFoundMs', label: 'Viewer found', get: (m) => stepAtMs(m.milestones, 'viewerFound') },
+  { key: 'manifestRequestMs', label: 'Manifest req', get: (m) => stepAtMs(m.milestones, 'manifestRequest') },
+  { key: 'manifestResponseMs', label: 'Manifest resp', get: (m) => stepAtMs(m.milestones, 'manifestResponse') },
+  { key: 'infoRequestMs', label: 'Info req', get: (m) => stepAtMs(m.milestones, 'infoRequest') },
+  { key: 'infoResponseMs', label: 'Info resp', get: (m) => stepAtMs(m.milestones, 'infoResponse') },
+  { key: 'firstTileRequestMs', label: 'First tile req', get: (m) => stepAtMs(m.milestones, 'firstTileRequest') },
+  { key: 'firstTileResponseMs', label: 'First tile resp', get: (m) => stepAtMs(m.milestones, 'firstTileResponse') },
+];
+
 function toRow(run) {
   const m = run.metrics;
-  return {
+  const row = {
     timestamp: m.runStartedAtUtc ?? null,
     host: m.host ?? null,
     workPath: m.workPath ?? null,
     runLabel: m.runLabel ?? null,
     challenge: Boolean(m.cloudflareChallenge?.detected),
     navError: Boolean(m.mainDocument?.error),
-    wait: m.mainDocument?.timing?.wait ?? null,
-    viewerFoundMs: m.milestones?.viewerFoundMs ?? null,
-    firstTileRequestMs: m.milestones?.firstTileRequestMs ?? null,
-    networkIdleMs: m.milestones?.networkIdleMs ?? null,
+    networkIdleMs: stepAtMs(m.milestones, 'networkIdle'),
     networkIdleTimedOut: Boolean(m.milestones?.networkIdleTimedOut),
+    totalMs: m.milestones?.totalMs ?? null,
     consoleErrorCount: Array.isArray(m.consoleErrors) ? m.consoleErrors.length : 0,
     pageErrorCount: Array.isArray(m.pageErrors) ? m.pageErrors.length : 0,
   };
+  for (const col of METRIC_COLUMNS) {
+    row[col.key] = col.get(m);
+  }
+  return row;
 }
 
 function fmtMs(value) {
@@ -70,7 +92,8 @@ function fmtNetworkIdle(row) {
 }
 
 // Stats over only the non-null values for one column — a null in one column
-// (e.g. a timed-out networkIdle) must not exclude that run from other columns.
+// (e.g. a timed-out networkIdle, or a deployment with no info.json request)
+// must not exclude that run from other columns.
 function stats(values) {
   const total = values.length;
   const nums = values.filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
@@ -92,18 +115,18 @@ function groupKey(row) {
 
 function printPerRunTable(rows) {
   const sorted = [...rows].sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+  const metricLabels = METRIC_COLUMNS.map((c) => c.label);
   console.log('## Per-run\n');
   console.log(
-    '| Timestamp | Host | Work | Label | Challenge | Nav error | Wait | Viewer found | First tile | Network idle | Console errs | Page errs |'
+    `| Timestamp | Host | Work | Label | Challenge | Nav error | ${metricLabels.join(' | ')} | Network idle | Total | Console errs | Page errs |`
   );
-  console.log('|---|---|---|---|---|---|---|---|---|---|---|---|');
+  console.log(`|${'---|'.repeat(6 + METRIC_COLUMNS.length + 4)}`);
   for (const r of sorted) {
+    const metricCells = METRIC_COLUMNS.map((c) => fmtMs(r[c.key])).join(' | ');
     console.log(
       `| ${r.timestamp} | ${r.host} | ${r.workPath} | ${r.runLabel ?? '—'} | ${r.challenge ? '⚠️ yes' : 'no'} | ${
         r.navError ? '⚠️ yes' : 'no'
-      } | ${fmtMs(r.wait)} | ${fmtMs(r.viewerFoundMs)} | ${fmtMs(r.firstTileRequestMs)} | ${fmtNetworkIdle(r)} | ${
-        r.consoleErrorCount
-      } | ${r.pageErrorCount} |`
+      } | ${metricCells} | ${fmtNetworkIdle(r)} | ${fmtMs(r.totalMs)} | ${r.consoleErrorCount} | ${r.pageErrorCount} |`
     );
   }
   console.log('');
@@ -117,9 +140,10 @@ function printAggregateTable(rows) {
     groups.get(key).push(r);
   }
 
+  const metricLabels = METRIC_COLUMNS.map((c) => c.label);
   console.log('## Aggregate (median (min–max, n=non-null/total))\n');
-  console.log('| Group | Runs | Challenges | Nav errors | Wait | Viewer found | First tile | Network idle |');
-  console.log('|---|---|---|---|---|---|---|---|');
+  console.log(`| Group | Runs | Challenges | Nav errors | ${metricLabels.join(' | ')} | Network idle | Total |`);
+  console.log(`|${'---|'.repeat(4 + METRIC_COLUMNS.length + 2)}`);
   for (const [key, groupRows] of groups) {
     const challengeCount = groupRows.filter((r) => r.challenge).length;
     const navErrorCount = groupRows.filter((r) => r.navError).length;
@@ -129,13 +153,12 @@ function printAggregateTable(rows) {
     const idleTimeouts = groupRows.filter((r) => r.networkIdleTimedOut).length;
     const idleStat = stats(groupRows.map((r) => r.networkIdleMs));
     const idleSuffix = idleTimeouts > 0 ? ` (+${idleTimeouts} timed out)` : '';
+    const metricCells = METRIC_COLUMNS.map((c) => fmtStat(stats(groupRows.map((r) => r[c.key])))).join(' | ');
 
     console.log(
       `| ${key} | ${groupRows.length} | ${challengeCount > 0 ? `⚠️ ${challengeCount}` : '0'} | ${
         navErrorCount > 0 ? `⚠️ ${navErrorCount}` : '0'
-      } | ${fmtStat(stats(groupRows.map((r) => r.wait)))} | ${fmtStat(stats(groupRows.map((r) => r.viewerFoundMs)))} | ${fmtStat(
-        stats(groupRows.map((r) => r.firstTileRequestMs))
-      )} | ${fmtStat(idleStat)}${idleSuffix} |`
+      } | ${metricCells} | ${fmtStat(idleStat)}${idleSuffix} | ${fmtStat(stats(groupRows.map((r) => r.totalMs)))} |`
     );
   }
   console.log('');

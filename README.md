@@ -14,8 +14,12 @@ time, across works, or across hosts/deployments (hykuup, ethos, etc).
   not treated as a hard failure, and never attempted to be solved.
 - HAR `dns` / `connect` / `ssl` / `wait` / `receive` timing breakdown for the main
   document request.
-- Time from navigation start to the viewer embed (iframe by default) appearing in the DOM.
-- Time from navigation start to the first IIIF Image API tile request/response.
+- An ordered, chronological breakdown of every milestone from navigation start
+  through `networkidle`: DOM lifecycle events, the viewer embed appearing in the
+  DOM, the IIIF **manifest** request/response, the IIIF **info.json**
+  request/response, and the first image-tile request/response — each with both
+  its absolute time since navigation start and its own step duration (time since
+  the previous milestone), plus a total. See "Metrics JSON shape" below.
 - `networkidle` timing, or a timed-out marker if the page never settles.
 - Console errors and uncaught page errors.
 - A screenshot and a HAR file.
@@ -60,6 +64,8 @@ op run --env-file=.env -- npx playwright test
 | `IIIF_TEST_UA` | no | plain desktop Chrome UA | Override the User-Agent sent (see below) |
 | `IIIF_TEST_VIEWER_SELECTOR` | no | see `src/config.ts` | CSS selector for the viewer embed. Default matches common Universal Viewer/Mirador iframe `src` conventions. **Tune this per deployment** — see caveat below |
 | `IIIF_TEST_TILE_PATTERN` | no | see `src/config.ts` | Regex (as a string) matching an IIIF Image API tile request URL by its `region/size/rotation/quality.format` shape, without assuming any particular URL prefix |
+| `IIIF_TEST_MANIFEST_PATTERN` | no | see `src/config.ts` | Regex matching the IIIF Presentation API manifest request URL. Default matches a path ending in `/manifest` or `/manifest.json` |
+| `IIIF_TEST_INFO_PATTERN` | no | see `src/config.ts` | Regex matching the IIIF Image API `info.json` request URL. Default matches a path ending in `/info.json` |
 | `IIIF_TEST_VIEWPORT_WIDTH` / `IIIF_TEST_VIEWPORT_HEIGHT` | no | `1400` / `1000` | Browser viewport size |
 | `IIIF_TEST_RUN_LABEL` | no | none | Tags this batch of runs (e.g. `baseline`, `after-cdn-change`) — stamped into each run's JSON and used as an extra results path segment, so runs for the same scenario group together. See "Comparing runs over time" below |
 | `IIIF_TEST_REPEAT` | no | `1` | Run each work this many times in one invocation. Single-run timings are noisy (see `iiif_viewer_investigation/request_flow.md` §5) — a real before/after comparison needs several samples per side, not one |
@@ -223,19 +229,40 @@ kubectl apply -k . --context <your-cluster>
 
 ## Metrics JSON shape
 
-See `src/types.ts` (`RunMetrics`) for the exact shape. Timing fields are milliseconds
-relative to navigation start; `null` means "not observed" (timed out, selector never
-matched, or the run aborted before that point — e.g. a Cloudflare challenge skips
-`networkidle`/tile/viewer timing entirely since there's nothing real left to measure).
+See `src/types.ts` (`RunMetrics`) for the exact shape. `milestones.steps` (see
+`src/milestoneSteps.ts`) is an array of every milestone this suite times —
+`domContentLoaded`, `loadEvent`, `viewerFound`, `manifestRequest`,
+`manifestResponse`, `infoRequest`, `infoResponse`, `firstTileRequest`,
+`firstTileResponse`, `networkIdle` — **ordered by when each actually happened**,
+not by an assumed canonical order (a deployment where `info.json` comes back
+before the manifest response, say, would still get a correct breakdown). Each
+step has:
+
+- `atMs` — milliseconds since navigation start (`null` if never observed —
+  timed out, selector never matched, or the run aborted before that point)
+- `stepMs` — milliseconds since the *previous observed* step — i.e. how long
+  that particular step took, which is usually more useful than the absolute
+  time when comparing runs (a slower manifest response shows up directly as a
+  larger `manifestResponse.stepMs`, without having to subtract two absolute
+  timestamps yourself)
+- `url` — the request/response URL for network-based steps, `null` for DOM
+  lifecycle steps
+
+`milestones.totalMs` is the `atMs` of the last observed step (equivalently, the
+sum of every `stepMs`) — a single top-line number for "how long did this run
+take, start to finish." A Cloudflare challenge sets `milestones` to `null`
+entirely, since nothing past that point is real page-load behavior.
 
 ## Extending to a new host or viewer
 
 1. Confirm the actual work-show URL path convention for that deployment (controller
    name varies by work type — check in a browser, don't assume).
 2. Run once with defaults and inspect the resulting HAR/screenshot to see whether the
-   default viewer selector and tile pattern actually matched anything for that
-   deployment's markup — adjust `IIIF_TEST_VIEWER_SELECTOR` / `IIIF_TEST_TILE_PATTERN`
-   if not.
+   default viewer selector, tile pattern, manifest pattern, and info pattern actually
+   matched anything for that deployment's markup — adjust `IIIF_TEST_VIEWER_SELECTOR` /
+   `IIIF_TEST_TILE_PATTERN` / `IIIF_TEST_MANIFEST_PATTERN` / `IIIF_TEST_INFO_PATTERN` if
+   not (a mismatched pattern just leaves that step's `atMs`/`stepMs` `null` in the
+   output — it doesn't error).
 
 ## Prior art
 

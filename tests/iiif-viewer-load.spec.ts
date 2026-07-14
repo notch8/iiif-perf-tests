@@ -3,6 +3,7 @@ import { loadConfig } from '../src/config';
 import { buildInitScript, extractMilestoneTimes, RawPerfEvent } from '../src/viewerDetection';
 import { extractMainDocumentTiming } from '../src/harTiming';
 import { buildRunPaths, ensureRunDirs, writeMetrics } from '../src/resultsWriter';
+import { buildSteps, type RawStep, type StepName } from '../src/milestoneSteps';
 import type { RunMetrics, ConsoleErrorEntry, PageErrorEntry } from '../src/types';
 
 const config = loadConfig();
@@ -61,18 +62,24 @@ for (const workPath of config.works) {
       // practice, local process) is negligible next to the multi-second timings
       // this suite measures.
       let navStartMs = 0;
-      const tiles: {
-        firstRequest: { ms: number; url: string } | null;
-        firstResponse: { ms: number; url: string } | null;
-      } = { firstRequest: null, firstResponse: null };
+      const requestResponseSteps: Array<{ pattern: RegExp; requestStep: StepName; responseStep: StepName }> = [
+        { pattern: config.manifestPattern, requestStep: 'manifestRequest', responseStep: 'manifestResponse' },
+        { pattern: config.infoPattern, requestStep: 'infoRequest', responseStep: 'infoResponse' },
+        { pattern: config.tilePattern, requestStep: 'firstTileRequest', responseStep: 'firstTileResponse' },
+      ];
+      const firstMatch: Partial<Record<StepName, RawStep>> = {};
       page.on('request', (req) => {
-        if (!tiles.firstRequest && config.tilePattern.test(req.url())) {
-          tiles.firstRequest = { ms: Date.now() - navStartMs, url: req.url() };
+        for (const s of requestResponseSteps) {
+          if (!firstMatch[s.requestStep] && s.pattern.test(req.url())) {
+            firstMatch[s.requestStep] = { atMs: Date.now() - navStartMs, url: req.url() };
+          }
         }
       });
       page.on('response', (res) => {
-        if (!tiles.firstResponse && config.tilePattern.test(res.url())) {
-          tiles.firstResponse = { ms: Date.now() - navStartMs, url: res.url() };
+        for (const s of requestResponseSteps) {
+          if (!firstMatch[s.responseStep] && s.pattern.test(res.url())) {
+            firstMatch[s.responseStep] = { atMs: Date.now() - navStartMs, url: res.url() };
+          }
         }
       });
 
@@ -131,18 +138,16 @@ for (const workPath of config.works) {
         mainDocument,
         milestones: navError
           ? null
-          : {
-              domContentLoadedMs: milestoneTimes.domContentLoadedMs,
-              loadEventMs: milestoneTimes.loadEventMs,
-              viewerFoundMs: milestoneTimes.viewerFoundMs,
-              viewerSelector: config.viewerSelector,
-              viewerSrc: milestoneTimes.viewerSrc,
-              firstTileRequestMs: tiles.firstRequest?.ms ?? null,
-              firstTileResponseMs: tiles.firstResponse?.ms ?? null,
-              firstTileUrl: (tiles.firstResponse ?? tiles.firstRequest)?.url ?? null,
-              networkIdleMs,
-              networkIdleTimedOut,
-            },
+          : (() => {
+              const { steps, totalMs } = buildSteps({
+                domContentLoaded: { atMs: milestoneTimes.domContentLoadedMs },
+                loadEvent: { atMs: milestoneTimes.loadEventMs },
+                viewerFound: { atMs: milestoneTimes.viewerFoundMs, url: milestoneTimes.viewerSrc },
+                ...firstMatch,
+                networkIdle: { atMs: networkIdleMs },
+              });
+              return { viewerSelector: config.viewerSelector, networkIdleTimedOut, steps, totalMs };
+            })(),
         consoleErrors,
         pageErrors,
         artifacts: {

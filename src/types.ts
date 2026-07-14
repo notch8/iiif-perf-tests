@@ -16,17 +16,18 @@ export interface PageErrorEntry {
   stack: string | null;
 }
 
+export interface MilestoneStep {
+  name: string;
+  atMs: number | null; // ms since navigation start; null if never observed
+  stepMs: number | null; // ms since the previous *observed* step; null if this step wasn't observed
+  url: string | null; // associated URL for request/response-type steps; null otherwise
+}
+
 export interface RunMilestones {
-  domContentLoadedMs: number | null;
-  loadEventMs: number | null;
-  viewerFoundMs: number | null;
   viewerSelector: string;
-  viewerSrc: string | null;
-  firstTileRequestMs: number | null;
-  firstTileResponseMs: number | null;
-  firstTileUrl: string | null;
-  networkIdleMs: number | null;
   networkIdleTimedOut: boolean;
+  steps: MilestoneStep[];
+  totalMs: number | null; // atMs of the last observed step
 }
 
 export interface RunMetrics {

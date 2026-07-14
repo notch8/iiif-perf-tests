@@ -24,6 +24,13 @@ const DEFAULT_VIEWER_SELECTOR =
 const DEFAULT_TILE_PATTERN =
   '/[^/]+/(full|square|pct:[\\d.,]+|\\d+,\\d+,\\d+,\\d+)/(full|max|\\^?\\d*,\\d*|pct:[\\d.]+)/!?\\d+/(default|color|gray|bitonal)\\.(jpg|jpeg|png|gif|webp|tif|tiff)(\\?|$)';
 
+// IIIF Presentation API manifest, e.g. .../concern/images/<id>/manifest —
+// no fixed prefix across deployments, so match on the path suffix instead.
+const DEFAULT_MANIFEST_PATTERN = '/manifest(\\.json)?(\\?|$)';
+
+// IIIF Image API info.json, e.g. .../<identifier>/info.json
+const DEFAULT_INFO_PATTERN = '/info\\.json(\\?|$)';
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value || !value.trim()) {
@@ -51,6 +58,8 @@ export interface SuiteConfig {
   userAgent: string;
   viewerSelector: string;
   tilePattern: RegExp;
+  manifestPattern: RegExp;
+  infoPattern: RegExp;
   viewportWidth: number;
   viewportHeight: number;
   runLabel: string | null;
@@ -71,6 +80,8 @@ export function loadConfig(): SuiteConfig {
     userAgent: process.env.IIIF_TEST_UA || DEFAULT_USER_AGENT,
     viewerSelector: process.env.IIIF_TEST_VIEWER_SELECTOR || DEFAULT_VIEWER_SELECTOR,
     tilePattern: new RegExp(process.env.IIIF_TEST_TILE_PATTERN || DEFAULT_TILE_PATTERN, 'i'),
+    manifestPattern: new RegExp(process.env.IIIF_TEST_MANIFEST_PATTERN || DEFAULT_MANIFEST_PATTERN, 'i'),
+    infoPattern: new RegExp(process.env.IIIF_TEST_INFO_PATTERN || DEFAULT_INFO_PATTERN, 'i'),
     viewportWidth: Number(process.env.IIIF_TEST_VIEWPORT_WIDTH) || 1400,
     viewportHeight: Number(process.env.IIIF_TEST_VIEWPORT_HEIGHT) || 1000,
     runLabel,

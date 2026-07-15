@@ -69,6 +69,7 @@ op run --env-file=.env -- npx playwright test
 | `IIIF_TEST_VIEWPORT_WIDTH` / `IIIF_TEST_VIEWPORT_HEIGHT` | no | `1400` / `1000` | Browser viewport size |
 | `IIIF_TEST_RUN_LABEL` | no | none | Tags this batch of runs (e.g. `baseline`, `after-cdn-change`) — stamped into each run's JSON and used as an extra results path segment, so runs for the same scenario group together. See "Comparing runs over time" below |
 | `IIIF_TEST_REPEAT` | no | `1` | Run each work this many times in one invocation. Single-run timings are noisy (see `iiif_viewer_investigation/request_flow.md` §5) — a real before/after comparison needs several samples per side, not one |
+| `BASIC_AUTH_USER` / `BASIC_AUTH_PW` | no | none | Optional HTTP Basic Auth credentials, for staging/pre-launch deployments that sit behind basic auth just to keep crawlers out. Both must be set for auth to activate — see "Basic auth" below |
 
 ### Why a cache-busting query param
 
@@ -90,6 +91,21 @@ committed `.env` files, in shell history, or in CI logs. Reference it via `op://
 `op run` also redacts the resolved value from anything the command prints to stdout.
 Without it, expect the suite to hit Cloudflare challenges on some deployments, which
 it will detect and record rather than try to solve.
+
+### Basic auth
+
+Some staging/pre-launch deployments sit behind HTTP Basic Auth, just to keep
+crawlers out — not a real security boundary, but still real credentials. Set
+both `BASIC_AUTH_USER` and `BASIC_AUTH_PW` to enable it; leaving either unset
+runs the suite with no `Authorization` header at all, same as today. The header
+is only ever sent to `IIIF_TEST_HOST` itself (via a scoped `context.route()`,
+not a context-wide `extraHTTPHeaders`) — it never reaches third-party requests
+the page happens to make (Google Fonts, GTM, Cloudflare Insights, etc.).
+
+Like the monitoring UA, never hardcode real credentials in `k8s/job.yaml` or
+any committed file — this repo is public. Reference them via 1Password/`op://`
+locally (`.env.example`) or `k8s/external-secret-basic-auth.yaml` in the
+cluster, same pattern as `IIIF_TEST_UA`.
 
 ## Known caveat: viewer selector false positives
 

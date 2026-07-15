@@ -51,6 +51,7 @@ function parseWorks(raw: string): string[] {
 
 export interface SuiteConfig {
   host: string;
+  extraHeaders: Record<string, string>;
   works: string[];
   navTimeoutMs: number;
   networkIdleTimeoutMs: number;
@@ -68,11 +69,24 @@ export interface SuiteConfig {
 
 export function loadConfig(): SuiteConfig {
   const host = requireEnv('IIIF_TEST_HOST').replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+  // Basic auth is optional — some staging/pre-launch deployments sit behind it
+  // just to keep crawlers out, but most don't. Only set the header when both
+  // pieces are actually provided; otherwise extraHTTPHeaders is just `{}`,
+  // which Playwright treats as "no extra headers."
+  const basicAuthUser = process.env.BASIC_AUTH_USER?.trim();
+  const basicAuthPassword = process.env.BASIC_AUTH_PW?.trim();
+  const extraHeaders: Record<string, string> =
+    basicAuthUser && basicAuthPassword
+      ? { Authorization: `Basic ${Buffer.from(`${basicAuthUser}:${basicAuthPassword}`).toString('base64')}` }
+      : {};
+
   const works = parseWorks(requireEnv('IIIF_TEST_WORKS'));
   const runLabel = process.env.IIIF_TEST_RUN_LABEL?.trim() || null;
 
   return {
     host,
+    extraHeaders,
     works,
     navTimeoutMs: Number(process.env.IIIF_TEST_NAV_TIMEOUT_MS) || 60000,
     networkIdleTimeoutMs: Number(process.env.IIIF_TEST_NETWORKIDLE_TIMEOUT_MS) || 45000,

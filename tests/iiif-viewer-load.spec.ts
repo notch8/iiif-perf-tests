@@ -38,6 +38,16 @@ for (const workPath of config.works) {
         recordHar: { path: paths.harPath, mode: 'full' },
       });
       await context.addInitScript(buildInitScript(config.viewerSelector));
+
+      // Scoped to the target host only — context-wide extraHTTPHeaders would
+      // send the (optional) basic-auth Authorization header to every request,
+      // including third-party origins (Google Fonts, GTM, Cloudflare Insights).
+      if (Object.keys(config.extraHeaders).length > 0) {
+        await context.route(`https://${config.host}/**`, async (route) => {
+          await route.continue({ headers: { ...route.request().headers(), ...config.extraHeaders } });
+        });
+      }
+
       const page = await context.newPage();
 
       const consoleErrors: ConsoleErrorEntry[] = [];

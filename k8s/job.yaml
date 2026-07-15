@@ -24,13 +24,13 @@ spec:
             # The three values to edit before each run, same idea as
             # solr_load_testing's solr_core callout in its README.
             - name: IIIF_TEST_HOST
-              value: "demo.hykuup.com"
+              value: "demo.enact-knapsack-staging.enacthyku.com"
             - name: IIIF_TEST_WORKS
-              value: "/concern/images/3812ff57-82e2-4d73-8cd8-9617fdfb3c44"
+              value: "concern/portfolio_artefacts/c916900e-d23e-42e7-b5b9-cc6a027b2e64"
             - name: IIIF_TEST_RUN_LABEL
-              value: "baseline"
+              value: "enact_baseline"
             - name: IIIF_TEST_REPEAT
-              value: "5"
+              value: "15"
             - name: IIIF_TEST_OUTPUT_DIR
               value: "/results"
             - name: IIIF_TEST_UA
@@ -38,6 +38,19 @@ spec:
                 secretKeyRef:
                   name: iiif-perf-monitoring-ua
                   key: ua
+            # Optional — only needed for deployments behind basic auth (see
+            # README's "Basic auth" section). Remove these two if the target
+            # deployment doesn't need it.
+            - name: BASIC_AUTH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: iiif-perf-basic-auth
+                  key: username
+            - name: BASIC_AUTH_PW
+              valueFrom:
+                secretKeyRef:
+                  name: iiif-perf-basic-auth
+                  key: password
           volumeMounts:
             - name: results
               mountPath: /results

@@ -6,3 +6,4 @@ resources:
   - k8s/pvc.yaml
   - k8s/job.yaml
   - k8s/external-secret.yaml
+  - k8s/external-secret-basic-auth.yaml

@@ -19,7 +19,7 @@ const DEFAULT_USER_AGENT =
 // to matching known viewer src conventions; override via IIIF_TEST_VIEWER_SELECTOR
 // for viewers not covered here (e.g. a div-based OpenSeadragon embed).
 const DEFAULT_VIEWER_SELECTOR =
-  'iframe[src*="/uv/"], iframe[src*="uv.html"], iframe[src*="mirador"], iframe[src*="universal-viewer"]';
+  'iframe[src*="/uv/"], iframe[src*="uv.html"], iframe[src*="mirador"], iframe[src*="universal-viewer"], iframe[src*="clover"]';
 
 const DEFAULT_TILE_PATTERN =
   '/[^/]+/(full|square|pct:[\\d.,]+|\\d+,\\d+,\\d+,\\d+)/(full|max|\\^?\\d*,\\d*|pct:[\\d.]+)/!?\\d+/(default|color|gray|bitonal)\\.(jpg|jpeg|png|gif|webp|tif|tiff)(\\?|$)';

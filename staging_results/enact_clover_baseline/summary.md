@@ -1,0 +1,25 @@
+## Per-run
+
+| Timestamp | Host | Work | Label | Challenge | Nav error | Wait | Viewer found | Manifest req | Manifest resp | JS chunks (manifest→info) | Info req | Info resp | First tile req | First tile resp | Network idle | Total | Console errs | Page errs |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-07-15T14:51:19.830Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 1248ms | N/A | 1904ms | 2024ms | N/A | N/A | N/A | N/A | N/A | 6422ms | 6422ms | 0 | 1 |
+| 2026-07-15T14:51:26.760Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 783ms | N/A | 1376ms | 1414ms | N/A | N/A | N/A | N/A | N/A | 5726ms | 5726ms | 0 | 1 |
+| 2026-07-15T14:51:32.972Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 891ms | N/A | 1460ms | 1554ms | N/A | N/A | N/A | N/A | N/A | 5812ms | 5812ms | 0 | 1 |
+| 2026-07-15T14:51:39.381Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 1056ms | N/A | 1591ms | 1637ms | N/A | N/A | N/A | N/A | N/A | 4695ms | 4695ms | 0 | 1 |
+| 2026-07-15T14:51:44.563Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 861ms | N/A | 1392ms | 1458ms | N/A | N/A | N/A | N/A | N/A | 5650ms | 5650ms | 0 | 1 |
+| 2026-07-15T14:51:50.793Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 812ms | N/A | 1383ms | 1509ms | N/A | N/A | N/A | N/A | N/A | 5182ms | 5182ms | 0 | 1 |
+| 2026-07-15T14:51:56.570Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 815ms | N/A | 1388ms | 1489ms | N/A | N/A | N/A | N/A | N/A | 4531ms | 4531ms | 0 | 1 |
+| 2026-07-15T14:52:01.680Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 914ms | N/A | 1550ms | 1631ms | N/A | N/A | N/A | N/A | N/A | 6163ms | 6163ms | 0 | 1 |
+| 2026-07-15T14:52:08.331Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 772ms | N/A | 1386ms | 1465ms | N/A | N/A | N/A | N/A | N/A | 5367ms | 5367ms | 0 | 1 |
+| 2026-07-15T14:52:14.278Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 669ms | N/A | 1288ms | 1345ms | N/A | N/A | N/A | N/A | N/A | 5196ms | 5196ms | 0 | 1 |
+| 2026-07-15T14:52:20.057Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 762ms | N/A | 1360ms | 1413ms | N/A | N/A | N/A | N/A | N/A | 6313ms | 6313ms | 0 | 1 |
+| 2026-07-15T14:52:26.938Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 752ms | N/A | 1337ms | 1392ms | N/A | N/A | N/A | N/A | N/A | 5060ms | 5060ms | 0 | 1 |
+| 2026-07-15T14:52:32.435Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 775ms | N/A | 1448ms | 1524ms | N/A | N/A | N/A | N/A | N/A | 5140ms | 5140ms | 0 | 1 |
+| 2026-07-15T14:52:38.034Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 817ms | N/A | 1426ms | 1487ms | N/A | N/A | N/A | N/A | N/A | 5174ms | 5174ms | 0 | 1 |
+| 2026-07-15T14:52:43.718Z | demo.enact-knapsack-staging.enacthyku.com | /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 | enact_clover_baseline | no | no | 1127ms | N/A | 1671ms | 1769ms | N/A | N/A | N/A | N/A | N/A | 5590ms | 5590ms | 0 | 1 |
+
+## Aggregate (median (min–max, n=non-null/total))
+
+| Group | Runs | Challenges | Nav errors | Wait | Viewer found | Manifest req | Manifest resp | JS chunks (manifest→info) | Info req | Info resp | First tile req | First tile resp | Network idle | Total |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| demo.enact-knapsack-staging.enacthyku.com /concern/portfolio_artefacts/586cc3b3-d15b-4533-8406-9e2c7cc628b2 [enact_clover_baseline] | 15 | 0 | 0 | 815ms (669ms–1248ms, n=15/15) | N/A (n=0/15) | 1392ms (1288ms–1904ms, n=15/15) | 1489ms (1345ms–2024ms, n=15/15) | N/A (n=0/15) | N/A (n=0/15) | N/A (n=0/15) | N/A (n=0/15) | N/A (n=0/15) | 5367ms (4531ms–6422ms, n=15/15) | 5367ms (4531ms–6422ms, n=15/15) |
